@@ -86,6 +86,14 @@
                     </div>
                     <p class="text-xs text-gray-500 mt-1">If enabled, no player's wealth can fall below this specified value during redistribution.</p>
                 </div>
+                 <div class="input-group col-span-1 md:col-span-2">
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="enable-shocks" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        <label for="enable-shocks" class="font-bold">Enable Economic Shocks:</label>
+                        <input type="number" id="shock-magnitude" value="2" min="0" class="w-24 p-1 border rounded-md disabled:bg-gray-200" disabled>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">If enabled, each player's wealth is randomly adjusted each period by up to this percentage.</p>
+                </div>
             </div>
             <div class="flex justify-center mt-6">
                 <button id="run-button" class="py-2 px-6 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors duration-200 disabled:bg-gray-400">Run Simulation</button>
@@ -113,6 +121,7 @@
                 <div id="param-temperature-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
                 <div id="param-blocking-size-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
                 <div id="param-min-floor-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-shocks-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
             </div>
         </section>
 
@@ -298,7 +307,7 @@ def propose_and_vote(players, current_allocation, majority_threshold, veto_playe
     else:
         return current_allocation, "Proposal rejected. Allocation remains the same."
 
-def run_simulation(num_players, initial_wealth, majority_threshold, veto_player_ids, total_wealth, beta, temperature, foresight_depth, minimum_floor):
+def run_simulation(num_players, initial_wealth, majority_threshold, veto_player_ids, total_wealth, beta, temperature, foresight_depth, minimum_floor, enable_shocks, shock_magnitude):
     log_messages.clear()
     log_to_js("--- Starting Simulation ---")
     log_to_js(f"Initial State: {initial_wealth}")
@@ -311,6 +320,8 @@ def run_simulation(num_players, initial_wealth, majority_threshold, veto_player_
     js.document.getElementById('param-beta-display').innerHTML = f"<strong>Discount Factor ($beta$):</strong> {beta}"
     js.document.getElementById('param-temperature-display').innerHTML = f"<strong>Temperature:</strong> {temperature}"
     js.document.getElementById('param-min-floor-display').innerHTML = f"<strong>Minimum Floor:</strong> {'Enabled (' + str(minimum_floor) + ')' if minimum_floor > 0 else 'Disabled'}"
+    js.document.getElementById('param-shocks-display').innerHTML = f"<strong>Economic Shocks:</strong> {'Enabled (' + str(shock_magnitude) + '%)' if enable_shocks else 'Disabled'}"
+
     
     players = [Player(i + 1) for i in range(num_players)]
     for player_id in veto_player_ids:
@@ -339,6 +350,14 @@ def run_simulation(num_players, initial_wealth, majority_threshold, veto_player_
         js.document.getElementById('progress-bar').style.width = f'{progress}%'
         js.document.getElementById('progress-text').textContent = f'{math.floor(progress)}%'
 
+        if enable_shocks and period > 1:
+            log_to_js(f"  Applying economic shocks (magnitude: {shock_magnitude}%)")
+            for i in range(len(current_allocation)):
+                shock_factor = 1 + (random.uniform(-shock_magnitude, shock_magnitude) / 100)
+                current_allocation[i] = max(0, current_allocation[i] * shock_factor)
+            log_to_js(f"  Shocked Allocation: {[round(x, 2) for x in current_allocation]}")
+
+
         for i, wealth in enumerate(current_allocation):
             players[i].wealth = wealth
             
@@ -363,7 +382,7 @@ def run_simulation(num_players, initial_wealth, majority_threshold, veto_player_
             log_to_js("  No veto player available to propose. Skipping period.")
             wealth_history.append(list(current_allocation))
         
-        if period > STABILITY_WINDOW:
+        if period > STABILITY_WINDOW and not enable_shocks: # Only check for stability if shocks are off
             recent_wealths = np.array(wealth_history[-STABILITY_WINDOW:])
             wealth_std_devs = np.std(recent_wealths, axis=0)
             if np.all(wealth_std_devs < STABILITY_THRESHOLD):
@@ -500,6 +519,12 @@ async def run_with_params(event=None):
         if enable_floor:
             minimum_floor = int(js.document.getElementById('minimum-floor').value)
 
+        enable_shocks = js.document.getElementById('enable-shocks').checked
+        shock_magnitude = 0
+        if enable_shocks:
+            shock_magnitude = float(js.document.getElementById('shock-magnitude').value)
+
+
         if not initial_wealth_str:
             raise ValueError("Initial wealth cannot be empty.")
         initial_wealth = tuple(map(int, initial_wealth_str.split(',')))
@@ -518,7 +543,7 @@ async def run_with_params(event=None):
         total_wealth = sum(initial_wealth)
 
         players, initial_wealth_tuple, final_allocation, wealth_history, proposals_history = run_simulation(
-            num_players, initial_wealth, majority_threshold, veto_player_ids, total_wealth, beta, temperature, foresight_depth, minimum_floor
+            num_players, initial_wealth, majority_threshold, veto_player_ids, total_wealth, beta, temperature, foresight_depth, minimum_floor, enable_shocks, shock_magnitude
         )
         
         js.document.getElementById('initial-state-chart').src = create_initial_state_chart(players, initial_wealth_tuple)
@@ -545,6 +570,15 @@ def setup_floor_input(event):
     minimum_floor_input.disabled = not enable_floor_checkbox.checked
 
 enable_floor_checkbox.onchange = create_proxy(setup_floor_input)
+
+enable_shocks_checkbox = js.document.getElementById('enable-shocks')
+shock_magnitude_input = js.document.getElementById('shock-magnitude')
+
+def setup_shocks_input(event):
+    shock_magnitude_input.disabled = not enable_shocks_checkbox.checked
+
+enable_shocks_checkbox.onchange = create_proxy(setup_shocks_input)
+
 
 # Run with default parameters on page load
 asyncio.ensure_future(run_with_params())
