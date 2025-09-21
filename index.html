@@ -247,7 +247,11 @@ def propose_and_vote(players, current_allocation, majority_threshold, veto_playe
         utility_yes = calculate_utility_recursive(player.player_id, proposed_allocation, foresight_depth, beta, players, veto_players, majority_threshold)
         utility_no = calculate_utility_recursive(player.player_id, current_allocation, foresight_depth, beta, players, veto_players, majority_threshold)
         
-        prob_yes = math.exp(utility_yes / temperature) / (math.exp(utility_yes / temperature) + math.exp(utility_no / temperature))
+        # Numerically stable softmax for voting probability
+        max_utility = max(utility_yes, utility_no)
+        exp_yes = math.exp((utility_yes - max_utility) / temperature)
+        exp_no = math.exp((utility_no - max_utility) / temperature)
+        prob_yes = exp_yes / (exp_yes + exp_no)
         
         if random.random() < prob_yes:
             votes[player] = "YES"
@@ -489,4 +493,5 @@ run_with_params()
 </py-script>
 </body>
 </html>
+
 
