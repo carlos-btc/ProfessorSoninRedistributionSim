@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Political Economy of Redistribution Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2024.3.1/core.js"></script>
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .chart-container {
+            background-color: #fff;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .input-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans p-6">
+    <div class="container mx-auto space-y-8">
+        <header class="text-center">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Political Economy of Redistribution</h1>
+            <p class="text-gray-600 text-lg">A dynamic game-theoretical model simulation based on Diermeier, Egorov, and Sonin (2016).</p>
+        </header>
+
+        <section id="controls" class="chart-container space-y-4">
+            <h2 class="text-2xl font-bold text-gray-700">Simulation Parameters</h2>
+            <p class="text-red-500" id="error-message"></p>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 text-gray-700">
+                <div class="input-group">
+                    <label for="num-players">Number of Players:</label>
+                    <input type="number" id="num-players" value="5" min="2">
+                    <p class="text-xs text-gray-500 mt-1">The total number of players participating in the game.</p>
+                </div>
+                <div class="input-group">
+                    <label for="initial-wealth">Initial Wealth (comma-separated):</label>
+                    <input type="text" id="initial-wealth" value="1,2,3,4,0">
+                    <p class="text-xs text-gray-500 mt-1">The starting wealth for each player. Must be a list of numbers matching the number of players.</p>
+                </div>
+                <div class="input-group">
+                    <label for="veto-players">Veto Players (comma-separated IDs):</label>
+                    <input type="text" id="veto-players" value="5">
+                    <p class="text-xs text-gray-500 mt-1">The player IDs (starting from 1) who hold veto power. These players are always part of a winning coalition.</p>
+                </div>
+                <div class="input-group">
+                    <label for="majority-threshold">Majority Threshold:</label>
+                    <input type="number" id="majority-threshold" value="3" min="1">
+                    <p class="text-xs text-gray-500 mt-1">The minimum number of votes required for a proposal to pass.</p>
+                </div>
+                <div class="input-group">
+                    <label for="foresight-depth">Foresight Depth:</label>
+                    <input type="number" id="foresight-depth" value="2" min="0">
+                    <p class="text-xs text-gray-500 mt-1">The number of future periods players consider when making a voting decision. A value of 0 means players are shortsighted.</p>
+                </div>
+                <div class="input-group">
+                    <label for="beta">Beta (Discount Factor):</label>
+                    <input type="number" id="beta" value="0.95" step="0.01" min="0" max="1">
+                    <p class="text-xs text-gray-500 mt-1">The discount factor that represents how much players value future wealth compared to immediate wealth.</p>
+                </div>
+                <div class="input-group">
+                    <label for="temperature">Temperature:</label>
+                    <input type="number" id="temperature" value="1.0" step="0.1" min="0.1">
+                    <p class="text-xs text-gray-500 mt-1">A parameter for the MCMC voting process. A lower temperature leads to more deterministic (rational) voting, while a higher temperature introduces more randomness.</p>
+                </div>
+            </div>
+            <div class="flex justify-center mt-6">
+                <button id="run-button" class="py-2 px-6 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors duration-200">Run Simulation</button>
+            </div>
+            <div id="param-display" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
+                <div id="param-num-players-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-initial-wealth-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-veto-players-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-majority-threshold-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-foresight-depth-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-beta-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-temperature-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+                <div id="param-blocking-size-display" class="rounded-lg p-3 bg-gray-50 border border-gray-200"></div>
+            </div>
+        </section>
+
+        <section id="visualization" class="space-y-8">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="chart-container" id="chart-1-container">
+                    <h2 class="text-2xl font-bold text-gray-700 mb-4">Initial State of the Model</h2>
+                    <img id="initial-state-chart" class="w-full h-auto">
+                </div>
+                <div class="chart-container" id="chart-2-container">
+                    <h2 class="text-2xl font-bold text-gray-700 mb-4">Final Wealth Distribution</h2>
+                    <img id="final-wealth-chart" class="w-full h-auto">
+                </div>
+            </div>
+
+            <div class="chart-container" id="chart-3-container">
+                <h2 class="text-2xl font-bold text-gray-700 mb-4">Wealth Evolution Over Time</h2>
+                <img id="wealth-evolution-chart" class="w-full h-auto">
+            </div>
+
+            <div class="chart-container" id="chart-4-container">
+                <h2 class="text-2xl font-bold text-gray-700 mb-4">Proposals and Outcomes</h2>
+                <img id="proposals-chart" class="w-full h-auto">
+            </div>
+        </section>
+
+        <section id="output" class="chart-container">
+            <h2 class="text-2xl font-bold text-gray-700">Simulation Output Log</h2>
+            <pre id="log-output" class="bg-gray-800 text-gray-200 p-4 mt-4 rounded-lg overflow-x-auto text-sm"></pre>
+        </section>
+    </div>
+    <py-config>
+        packages = ["numpy", "matplotlib"]
+    </py-config>
+    <py-script>
+import random
+import math
+import js
+from collections import Counter
+import io
+import base64
+import numpy as np
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+    
+# A global list to store log messages
+log_messages = []
+
+def log_to_js(message):
+    log_messages.append(message)
+    js.document.getElementById('log-output').textContent = "\n".join(log_messages)
+
+class Player:
+    """Represents a player in the game."""
+    def __init__(self, player_id, is_veto=False):
+        self.player_id = player_id
+        self.is_veto = is_veto
+        self.wealth = 0
+
+    def __repr__(self):
+        return f"P{self.player_id}(Veto={self.is_veto}, Wealth={self.wealth})"
+
+def check_winning_coalition(coalition, veto_players, majority_threshold):
+    """
+    Checks if a coalition is winning based on the majority threshold and veto players.
+    
+    A winning coalition must:
+    1. Include all veto players.
+    2. Have a size greater than or equal to the majority threshold.
+    """
+    coalition_ids = {p.player_id for p in coalition}
+    veto_ids = {p.player_id for p in veto_players}
+    
+    if not veto_ids.issubset(coalition_ids):
+        return False
+    
+    if len(coalition) < majority_threshold:
+        return False
+        
+    return True
+
+def find_blocking_coalition_size(num_players, num_veto_players, majority_threshold):
+    return num_players - majority_threshold + 1
+
+def calculate_utility_recursive(player_id, current_allocation, foresight_depth, beta, players, veto_players, majority_threshold):
+    if foresight_depth <= 0:
+        return current_allocation[player_id - 1]
+    
+    current_payoff = current_allocation[player_id - 1]
+    
+    next_proposer = random.choice(veto_players)
+    next_proposed_allocation = list(current_allocation)
+    
+    non_veto_players = sorted([p for p in players if not p.is_veto], key=lambda p: next_proposed_allocation[p.player_id-1])
+    num_non_veto_partners = majority_threshold - len(veto_players)
+    coalition_partners = []
+    if num_non_veto_partners > 0:
+        coalition_partners = non_veto_players[-num_non_veto_partners:]
+        
+    non_coalition_members = [p for p in non_veto_players if p not in coalition_partners]
+    expropriated_players = non_coalition_members
+    
+    expropriated_wealth = sum(next_proposed_allocation[p.player_id - 1] for p in expropriated_players)
+    
+    for p in expropriated_players:
+        next_proposed_allocation[p.player_id - 1] = 0
+    
+    next_proposed_allocation[next_proposer.player_id - 1] += expropriated_wealth
+    
+    future_utility = calculate_utility_recursive(
+        player_id,
+        next_proposed_allocation,
+        foresight_depth - 1,
+        beta,
+        players,
+        veto_players,
+        majority_threshold
+    )
+    
+    return current_payoff + beta * future_utility
+
+def propose_and_vote(players, current_allocation, majority_threshold, veto_players, blocking_coalition_size, beta, temperature, foresight_depth):
+    proposer = random.choice(veto_players)
+    
+    non_veto_players = sorted([p for p in players if not p.is_veto], key=lambda p: p.wealth)
+    
+    num_non_veto_partners = majority_threshold - len(veto_players)
+    
+    coalition_partners = []
+    if num_non_veto_partners > 0:
+        coalition_partners = non_veto_players[-num_non_veto_partners:]
+        
+    non_coalition_members = [p for p in non_veto_players if p not in coalition_partners]
+    expropriated_players = non_coalition_members
+    
+    proposed_allocation = list(current_allocation)
+    
+    expropriated_wealth = sum(current_allocation[p.player_id - 1] for p in expropriated_players)
+    
+    for p in expropriated_players:
+        proposed_allocation[p.player_id - 1] = 0
+    
+    proposed_allocation[proposer.player_id - 1] += expropriated_wealth
+    
+    log_to_js(f"  Proposer P{proposer.player_id} proposes the new allocation: {proposed_allocation}")
+    log_to_js(f"  Proposed Coalition: {[p.player_id for p in veto_players] + [p.player_id for p in coalition_partners]}")
+    
+    votes = {}
+    
+    for player in players:
+        utility_yes = calculate_utility_recursive(player.player_id, proposed_allocation, foresight_depth, beta, players, veto_players, majority_threshold)
+        utility_no = calculate_utility_recursive(player.player_id, current_allocation, foresight_depth, beta, players, veto_players, majority_threshold)
+        
+        prob_yes = math.exp(utility_yes / temperature) / (math.exp(utility_yes / temperature) + math.exp(utility_no / temperature))
+        
+        if random.random() < prob_yes:
+            votes[player] = "YES"
+        else:
+            votes[player] = "NO"
+    
+    yes_votes = [p for p, vote in votes.items() if vote == "YES"]
+    
+    if check_winning_coalition(yes_votes, veto_players, majority_threshold):
+        return proposed_allocation, "Proposal accepted."
+    else:
+        return current_allocation, "Proposal rejected. Allocation remains the same."
+
+def run_simulation(num_players, initial_wealth, majority_threshold, veto_player_ids, total_wealth, beta, temperature, foresight_depth):
+    log_messages.clear()
+    log_to_js("--- Starting Simulation ---")
+    log_to_js(f"Initial State: {initial_wealth}")
+    
+    # Update parameter display
+    js.document.getElementById('param-num-players-display').innerHTML = f"<strong>Number of Players:</strong> {num_players}"
+    js.document.getElementById('param-initial-wealth-display').innerHTML = f"<strong>Initial Wealth:</strong> {initial_wealth}"
+    js.document.getElementById('param-veto-players-display').innerHTML = f"<strong>Veto Players:</strong> {veto_player_ids}"
+    js.document.getElementById('param-majority-threshold-display').innerHTML = f"<strong>Majority Threshold:</strong> {majority_threshold}"
+    js.document.getElementById('param-foresight-depth-display').innerHTML = f"<strong>Foresight Depth:</strong> {foresight_depth}"
+    js.document.getElementById('param-beta-display').innerHTML = f"<strong>Discount Factor ($beta$):</strong> {beta}"
+    js.document.getElementById('param-temperature-display').innerHTML = f"<strong>Temperature:</strong> {temperature}"
+    
+    players = [Player(i + 1) for i in range(num_players)]
+    for player_id in veto_player_ids:
+        if 1 <= player_id <= num_players:
+            players[player_id - 1].is_veto = True
+    
+    current_allocation = list(initial_wealth)
+    for i, wealth in enumerate(current_allocation):
+        players[i].wealth = wealth
+    
+    blocking_coalition_size = find_blocking_coalition_size(num_players, len(veto_player_ids), majority_threshold)
+    js.document.getElementById('param-blocking-size-display').innerHTML = f"<strong>Blocking Coalition Size:</strong> {blocking_coalition_size}"
+
+    wealth_history = [list(initial_wealth)]
+    proposals_history = []
+    
+    period = 1
+    STABILITY_WINDOW = 10
+    STABILITY_THRESHOLD = 0.05
+
+    while period <= 200:
+        log_to_js(f"\nPeriod {period}")
+        
+        for i, wealth in enumerate(current_allocation):
+            players[i].wealth = wealth
+            
+        proposed_allocation_for_log = list(current_allocation)
+        proposer_log = random.choice([p for p in players if p.is_veto]) if any(p.is_veto for p in players) else None
+        
+        if proposer_log:
+            non_veto_log = sorted([p for p in players if not p.is_veto], key=lambda p: p.wealth)
+            num_non_veto_partners_log = majority_threshold - len([p for p in players if p.is_veto])
+            coalition_partners_log = []
+            if num_non_veto_partners_log > 0:
+                coalition_partners_log = non_veto_log[-num_non_veto_partners_log:]
+            non_coalition_members_log = [p for p in non_veto_log if p not in coalition_partners_log]
+            expropriated_wealth_log = sum(current_allocation[p.player_id - 1] for p in non_coalition_members_log)
+            for p in non_coalition_members_log:
+                proposed_allocation_for_log[p.player_id - 1] = 0
+            proposed_allocation_for_log[proposer_log.player_id - 1] += expropriated_wealth_log
+            
+            new_allocation, status = propose_and_vote(players, current_allocation, majority_threshold, [p for p in players if p.is_veto], blocking_coalition_size, beta, temperature, foresight_depth)
+            
+            proposals_history.append({
+                'period': period,
+                'proposer': proposer_log.player_id,
+                'gain': proposed_allocation_for_log[proposer_log.player_id - 1] - current_allocation[proposer_log.player_id - 1],
+                'accepted': new_allocation != current_allocation
+            })
+            
+            current_allocation = new_allocation
+            wealth_history.append(list(current_allocation))
+            
+            log_to_js(f"  Resulting Allocation: {current_allocation}")
+            log_to_js(f"  Status: {status}")
+        else:
+            log_to_js("  No veto player available to propose. Skipping period.")
+            wealth_history.append(list(current_allocation))
+        
+        if period > STABILITY_WINDOW:
+            recent_wealths = np.array(wealth_history[-STABILITY_WINDOW:])
+            wealth_std_devs = np.std(recent_wealths, axis=0)
+            if np.all(wealth_std_devs < STABILITY_THRESHOLD):
+                log_to_js(f"\nStable equilibrium achieved after {period} periods. Stopping simulation.")
+                break
+        
+        period += 1
+        if period > 200:
+            log_to_js("\nSimulation ended after 200 periods.")
+            break
+
+    return players, initial_wealth, current_allocation, wealth_history, proposals_history
+
+def get_base64_image(fig):
+    buffer = io.BytesIO()
+    canvas = FigureCanvasAgg(fig)
+    canvas.print_png(buffer)
+    buffer.seek(0)
+    img_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    plt.close(fig)
+    return f"data:image/png;base64,{img_b64}"
+
+def create_initial_state_chart(players, initial_wealth):
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=100)
+    player_labels = [f"P{p.player_id}" for p in players]
+    colors = ['#4A90E2' if p.is_veto else '#F5A623' for p in players]
+    
+    ax.bar(player_labels, initial_wealth, color=colors)
+    ax.set_title("Initial Wealth Distribution", fontsize=16)
+    ax.set_xlabel("Player", fontsize=12)
+    ax.set_ylabel("Wealth", fontsize=12)
+    ax.set_ylim(0, max(initial_wealth) + 1)
+    
+    veto_patch = plt.Rectangle((0, 0), 1, 1, fc='#4A90E2', label='Veto Player')
+    non_veto_patch = plt.Rectangle((0, 0), 1, 1, fc='#F5A623', label='Non-Veto Player')
+    ax.legend(handles=[veto_patch, non_veto_patch], loc='upper right')
+    
+    return get_base64_image(fig)
+
+def create_final_wealth_chart(players, final_wealth):
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=100)
+    player_labels = [f"P{p.player_id}" for p in players]
+    colors = ['#4A90E2' if p.is_veto else '#F5A623' for p in players]
+    
+    ax.bar(player_labels, final_wealth, color=colors)
+    ax.set_title("Final Wealth Distribution", fontsize=16)
+    ax.set_xlabel("Player", fontsize=12)
+    ax.set_ylabel("Wealth", fontsize=12)
+    ax.set_ylim(0, max(final_wealth) + 1)
+    
+    veto_patch = plt.Rectangle((0, 0), 1, 1, fc='#4A90E2', label='Veto Player')
+    non_veto_patch = plt.Rectangle((0, 0), 1, 1, fc='#F5A623', label='Non-Veto Player')
+    ax.legend(handles=[veto_patch, non_veto_patch], loc='upper right')
+    
+    return get_base64_image(fig)
+
+def create_wealth_evolution_chart(players, wealth_history):
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=100)
+    num_periods = len(wealth_history)
+    
+    for i, player in enumerate(players):
+        wealth_values = [p[i] for p in wealth_history]
+        ax.plot(range(num_periods), wealth_values, label=f"Player {player.player_id}", marker='o', linestyle='--')
+        
+    ax.set_title("Wealth Evolution Over Time", fontsize=16)
+    ax.set_xlabel("Period", fontsize=12)
+    ax.set_ylabel("Wealth", fontsize=12)
+    ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    ax.grid(True, linestyle='--', alpha=0.6)
+    fig.tight_layout()
+    
+    return get_base64_image(fig)
+
+def create_proposals_chart(proposals_history):
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=100)
+    
+    periods = [p['period'] for p in proposals_history]
+    gains = [p['gain'] for p in proposals_history]
+    accepted = [p['accepted'] for p in proposals_history]
+    
+    accepted_x = [periods[i] for i, val in enumerate(accepted) if val]
+    accepted_y = [gains[i] for i, val in enumerate(accepted) if val]
+    rejected_x = [periods[i] for i, val in enumerate(accepted) if not val]
+    rejected_y = [gains[i] for i, val in enumerate(accepted) if not val]
+    
+    ax.scatter(accepted_x, accepted_y, color='green', label='Proposal Accepted', s=50)
+    ax.scatter(rejected_x, rejected_y, color='red', label='Proposal Rejected', s=50, marker='x')
+
+    ax.set_title("Proposer's Gains and Proposal Outcomes", fontsize=16)
+    ax.set_xlabel("Period", fontsize=12)
+    ax.set_ylabel("Proposed Gain", fontsize=12)
+    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.6)
+    
+    return get_base64_image(fig)
+
+def run_with_params():
+    try:
+        # Clear previous outputs and errors
+        js.document.getElementById('error-message').textContent = ''
+        js.document.getElementById('log-output').textContent = ''
+
+        # Get values from input fields and validate
+        num_players = int(js.document.getElementById('num-players').value)
+        initial_wealth_str = js.document.getElementById('initial-wealth').value
+        veto_players_str = js.document.getElementById('veto-players').value
+        majority_threshold = int(js.document.getElementById('majority-threshold').value)
+        foresight_depth = int(js.document.getElementById('foresight-depth').value)
+        beta = float(js.document.getElementById('beta').value)
+        temperature = float(js.document.getElementById('temperature').value)
+
+        # Basic validation
+        if not initial_wealth_str:
+            raise ValueError("Initial wealth cannot be empty.")
+        initial_wealth = tuple(map(int, initial_wealth_str.split(',')))
+        if len(initial_wealth) != num_players:
+            raise ValueError("Number of players must match the number of wealth values.")
+        if majority_threshold < 1 or majority_threshold > num_players:
+            raise ValueError("Majority threshold must be between 1 and the number of players.")
+
+        veto_player_ids = []
+        if veto_players_str:
+            veto_player_ids = [int(i) for i in veto_players_str.split(',')]
+            for player_id in veto_player_ids:
+                if not 1 <= player_id <= num_players:
+                    raise ValueError(f"Veto player ID {player_id} is out of bounds.")
+        
+        total_wealth = sum(initial_wealth)
+
+        # Run the simulation with user-provided parameters
+        players, initial_wealth_tuple, final_allocation, wealth_history, proposals_history = run_simulation(
+            num_players, initial_wealth, majority_threshold, veto_player_ids, total_wealth, beta, temperature, foresight_depth
+        )
+        
+        # Generate and display visualizations
+        js.document.getElementById('initial-state-chart').src = create_initial_state_chart(players, initial_wealth_tuple)
+        js.document.getElementById('final-wealth-chart').src = create_final_wealth_chart(players, final_allocation)
+        js.document.getElementById('wealth-evolution-chart').src = create_wealth_evolution_chart(players, wealth_history)
+        js.document.getElementById('proposals-chart').src = create_proposals_chart(proposals_history)
+
+    except ValueError as e:
+        js.document.getElementById('error-message').textContent = f"Input Error: {e}"
+    except Exception as e:
+        js.document.getElementById('error-message').textContent = f"An unexpected error occurred: {e}"
+
+# Bind the button click event
+js.document.getElementById('run-button').onclick = run_with_params
+
+# Run with default parameters on page load
+# This is a bit of a workaround to get an initial state to display
+# before the user clicks the button. It calls the same logic.
+run_with_params()
+</py-script>
+</body>
+</html>
